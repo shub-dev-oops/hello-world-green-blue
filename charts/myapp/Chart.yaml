@@ -1,0 +1,5 @@
+apiVersion: v2
+name: myapp
+version: 0.1.0
+description: Blue-Green MVP (no Ingress, NLB Service)
+type: application

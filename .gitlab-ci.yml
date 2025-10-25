@@ -1,0 +1,73 @@
+stages: [build, deploy_green, smoke, promote, rollback]
+
+variables:
+  KUBE_NAMESPACE: "prod"
+  CHART_PATH: "charts/myapp"
+  APP_NAME: "myapp"
+  IMAGE_REPO: "registry.gitlab.com/ORG/PROJ/myapp"
+  HELM_RELEASE_BLUE: "myapp-blue"
+  HELM_RELEASE_GREEN: "myapp-green"
+  HELM_RELEASE_ROUTER: "myapp-router"
+
+.default_kube: &kube
+  image: alpine/helm:3.15.4
+  before_script:
+    - apk add --no-cache bash curl jq kubectl
+    # If using raw kubeconfig, store in GitLab variable KUBECONFIG_CONTENT:
+    # - mkdir -p ~/.kube && echo "$KUBECONFIG_CONTENT" > ~/.kube/config
+
+build:
+  stage: build
+  image: docker:27.3.1
+  services: [docker:27.3.1-dind]
+  script:
+    - docker build -t $IMAGE_REPO:$CI_COMMIT_SHA .
+    - docker push $IMAGE_REPO:$CI_COMMIT_SHA
+  only: [main, merge_requests]
+
+deploy_green:
+  stage: deploy_green
+  <<: *kube
+  script:
+    - helm upgrade --install $HELM_RELEASE_GREEN $CHART_PATH -n $KUBE_NAMESPACE \
+        --set color=green \
+        --set service.enabled=false \
+        --set image.repository=$IMAGE_REPO \
+        --set image.tag=$CI_COMMIT_SHA
+    - kubectl -n $KUBE_NAMESPACE rollout status deploy/${APP_NAME}-green --timeout=300s
+  environment:
+    name: green
+  only: [main, merge_requests]
+
+smoke:
+  stage: smoke
+  <<: *kube
+  script:
+    - POD=$(kubectl -n $KUBE_NAMESPACE get pod -l app=$APP_NAME,color=green -o jsonpath='{.items[0].metadata.name}')
+    - kubectl -n $KUBE_NAMESPACE exec $POD -- wget -qO- http://localhost:8080/readyz
+    - kubectl -n $KUBE_NAMESPACE exec $POD -- wget -qO- http://localhost:8080/healthz
+  only: [main, merge_requests]
+
+promote:
+  stage: promote
+  <<: *kube
+  script:
+    - helm upgrade --install $HELM_RELEASE_ROUTER $CHART_PATH -n $KUBE_NAMESPACE \
+        --set deployment.enabled=false \
+        --set routeTo=green
+  when: manual
+  environment:
+    name: production
+  only: [main]
+
+rollback:
+  stage: rollback
+  <<: *kube
+  script:
+    - helm upgrade --install $HELM_RELEASE_ROUTER $CHART_PATH -n $KUBE_NAMESPACE \
+        --set deployment.enabled=false \
+        --set routeTo=blue
+  when: manual
+  environment:
+    name: production
+  only: [main]
