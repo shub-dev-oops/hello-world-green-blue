@@ -1,0 +1,56 @@
+{{- if .Values.deployment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}-{{ .Values.color }}
+  labels:
+    app: {{ .Values.name }}
+    color: {{ .Values.color }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+      color: {{ .Values.color }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        color: {{ .Values.color }}
+    spec:
+      containers:
+      - name: app
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: {{ .Values.ports.container }}
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: {{ .Values.ports.container }}
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.ports.container }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        env:
+        - name: APP_NAME
+          value: {{ .Values.name | quote }}
+        - name: APP_COLOR
+          value: {{ .Values.color | quote }}
+        - name: APP_SERVICE_PORT
+          value: {{ .Values.ports.service | quote }}
+        resources:
+{{- if .Values.resources }}
+{{ toYaml .Values.resources | indent 10 }}
+{{- else }}
+          {}
+{{- end }}
+{{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- end }}
