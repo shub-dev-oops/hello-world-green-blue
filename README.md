@@ -80,6 +80,13 @@ helm upgrade --install myapp-router charts/myapp -n prod \
   --set routeTo=green
 ```
 
+```
+helm upgrade --install myapp-green ./chart -n prod \
+  --set color=green \
+  --set container.command[0]=python \
+  --set container.args[0]=app.py
+```
+
 Rollback by setting `routeTo=blue` again (and keeping `deployment.enabled=false`).
 
 ## GitLab CI/CD pipeline
