@@ -8,6 +8,11 @@ image:
   repository: registry.gitlab.com/ORG/PROJ/myapp
   tag: "latest"
 
+container:
+  port: 8080
+  command: ["python"]
+  args: ["app.py"]  # or the correct script entry, e.g., "main.py"
+
 ports:
   service: 80
   container: 8080
