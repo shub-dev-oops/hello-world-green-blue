@@ -21,7 +21,7 @@ spec:
       containers:
       - name: app
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: {{ .Values.ports.container }}
         readinessProbe:
