@@ -7,6 +7,20 @@ This repository contains a minimal blue/green deployment demo for Amazon EKS tha
 - A GitLab CI/CD pipeline that builds the container image, deploys the green environment, runs smoke tests, and offers manual promote/rollback jobs.
 - Optional Kubernetes RBAC resources so the GitLab runner can manage the application.
 
+````
+helm upgrade --install myapp-green ./chart -n prod \
+  --set color=green \
+  --set image.repository=hashicorp/http-echo \
+  --set image.tag=0.2.3 \
+  --set container.port=8080 \
+  --set container.command[0]=/http-echo \
+  --set container.args[0]=-text="hello from GREEN" \
+  --set container.args[1]=-listen=:8080
+
+````
+
+
+
 ## Public Load Balancer accessibility
 
 The Service is created with the annotation `service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"`, so AWS provisions a public NLB. You can reach the app from the internet using the DNS name (or static Elastic IPs if configured) that appears under `EXTERNAL-IP` when you run:
