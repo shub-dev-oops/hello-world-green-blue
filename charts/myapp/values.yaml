@@ -34,7 +34,7 @@ deployment:
 # `failure-domain.beta.kubernetes.io/zone`.
 nodeAffinity:
   # Set to true to enable the affinity block in the pod spec
-  enabled: false
+  enabled: true
   # Required scheduling: provide the selector key and a list of acceptable values
   # Example:
   # required:
@@ -42,7 +42,7 @@ nodeAffinity:
   #   values: ["us-west-2a"]
   required:
     key: topology.kubernetes.io/zone
-    values: []
+    values: ["us-east-1b"]
   # Preferred scheduling (list of {weight,key,values})
   # Example:
   # preferred:
