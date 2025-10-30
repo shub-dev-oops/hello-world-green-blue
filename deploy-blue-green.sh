@@ -1,18 +1,18 @@
 #!/bin/bash
 # Blue/Green deployment management script
 # Usage: 
-#   ./deploy-blue-green.sh setup <namespace> <image-tag> [image-repo]
-#   ./deploy-blue-green.sh deploy-green <namespace> <image-tag> [image-repo]
-#   ./deploy-blue-green.sh promote <namespace>
-#   ./deploy-blue-green.sh rollback <namespace>
-#   ./deploy-blue-green.sh status <namespace>
+#   ./deploy-blue-green.sh promote
+#   ./deploy-blue-green.sh rollback
+#   ./deploy-blue-green.sh status
 
 set -e
 
+# Configuration - Update these values for your environment
+NAMESPACE="prod"
+IMAGE_REPO="registry.gixtlab.com/ORG/PROJ/myapp"
+IMAGE_TAG="latest"
+
 COMMAND=${1}
-NAMESPACE=${2:-prod}
-IMAGE_TAG=${3:-demo}
-IMAGE_REPO=${4:-myapp}
 
 # Colors for output
 RED='\033[0;31m'
@@ -24,27 +24,24 @@ NC='\033[0m' # No Color
 usage() {
     echo "Blue/Green Deployment Manager"
     echo ""
+    echo "Configuration:"
+    echo "  Namespace:  $NAMESPACE"
+    echo "  Image:      $IMAGE_REPO:$IMAGE_TAG"
+    echo ""
     echo "Usage:"
-    echo "  $0 setup <namespace> <image-tag> [image-repo]"
-    echo "      Initialize blue baseline and router service"
-    echo ""
-    echo "  $0 deploy-green <namespace> <new-image-tag> [image-repo]"
-    echo "      Deploy new version to green deployment"
-    echo ""
-    echo "  $0 promote <namespace>"
+    echo "  $0 promote"
     echo "      Switch traffic from blue to green"
     echo ""
-    echo "  $0 rollback <namespace>"
+    echo "  $0 rollback"
     echo "      Switch traffic back to blue"
     echo ""
-    echo "  $0 status <namespace>"
+    echo "  $0 status"
     echo "      Show current deployment status"
     echo ""
     echo "Examples:"
-    echo "  $0 setup prod v1.0.0 myregistry.io/myapp"
-    echo "  $0 deploy-green prod v1.1.0 myregistry.io/myapp"
-    echo "  $0 promote prod"
-    echo "  $0 rollback prod"
+    echo "  $0 status"
+    echo "  $0 promote"
+    echo "  $0 rollback"
     exit 1
 }
 
@@ -63,13 +60,15 @@ get_current_target() {
 show_status() {
     check_namespace
     
-    echo -e "${BLUE}📋 Current Deployment Status${NC}"
+    echo -e "${BLUE}📋 Blue/Green Deployment Status${NC}"
     echo "Namespace: $NAMESPACE"
+    echo "Image:     $IMAGE_REPO:$IMAGE_TAG"
     echo ""
     
     # Check if router exists
     if ! kubectl -n $NAMESPACE get svc myapp &> /dev/null; then
-        echo -e "${YELLOW}⚠️  Router service 'myapp' not found. Run 'setup' first.${NC}"
+        echo -e "${YELLOW}⚠️  Router service 'myapp' not found.${NC}"
+        echo "Make sure deployments are created via CI/CD pipeline first."
         exit 1
     fi
     
@@ -93,97 +92,13 @@ show_status() {
     kubectl -n $NAMESPACE get svc myapp -o jsonpath='{.spec.selector}' 2>/dev/null | jq || echo "{}"
 }
 
-setup_baseline() {
-    echo -e "${BLUE}🔵 Setting up Blue/Green baseline${NC}"
-    echo "Namespace: $NAMESPACE"
-    echo "Image: $IMAGE_REPO:$IMAGE_TAG"
-    echo ""
-    
-    # Create namespace
-    echo -e "${YELLOW}1️⃣  Creating namespace...${NC}"
-    kubectl create ns $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-    
-    # Deploy blue baseline
-    echo -e "${YELLOW}2️⃣  Deploying BLUE baseline...${NC}"
-    helm upgrade --install myapp-blue charts/myapp -n $NAMESPACE \
-      --set color=blue \
-      --set service.enabled=false \
-      --set image.repository=$IMAGE_REPO \
-      --set image.tag=$IMAGE_TAG
-    
-    # Wait for blue to be ready
-    echo -e "${YELLOW}⏳ Waiting for blue deployment...${NC}"
-    kubectl -n $NAMESPACE rollout status deploy/myapp-blue --timeout=120s
-    
-    # Create router pointing to blue
-    echo -e "${YELLOW}3️⃣  Creating router Service (pointing to BLUE)...${NC}"
-    helm upgrade --install myapp-router charts/myapp -n $NAMESPACE \
-      --set deployment.enabled=false \
-      --set service.enabled=true \
-      --set routeTo=blue
-    
-    echo ""
-    echo -e "${GREEN}✅ Setup complete!${NC}"
-    echo ""
-    show_status
-    
-    echo ""
-    echo -e "${BLUE}Next steps:${NC}"
-    echo "  1. Test the blue deployment:"
-    echo "     kubectl -n $NAMESPACE port-forward deploy/myapp-blue 8080:8080"
-    echo ""
-    echo "  2. Deploy a new version to green:"
-    echo "     $0 deploy-green $NAMESPACE <new-tag> $IMAGE_REPO"
-}
-
-deploy_green() {
-    check_namespace
-    
-    echo -e "${GREEN}🟢 Deploying GREEN deployment${NC}"
-    echo "Namespace: $NAMESPACE"
-    echo "Image: $IMAGE_REPO:$IMAGE_TAG"
-    echo ""
-    
-    # Deploy green
-    echo -e "${YELLOW}1️⃣  Deploying GREEN deployment...${NC}"
-    helm upgrade --install myapp-green charts/myapp -n $NAMESPACE \
-      --set color=green \
-      --set service.enabled=false \
-      --set image.repository=$IMAGE_REPO \
-      --set image.tag=$IMAGE_TAG
-    
-    # Wait for green to be ready
-    echo -e "${YELLOW}⏳ Waiting for green deployment...${NC}"
-    kubectl -n $NAMESPACE rollout status deploy/myapp-green --timeout=120s
-    
-    echo ""
-    echo -e "${GREEN}✅ Green deployment ready!${NC}"
-    echo ""
-    
-    local current_target=$(get_current_target)
-    echo -e "Current traffic target: ${BLUE}${current_target}${NC}"
-    echo ""
-    
-    echo -e "${BLUE}Next steps:${NC}"
-    echo "  1. Test the green deployment:"
-    echo "     kubectl -n $NAMESPACE port-forward deploy/myapp-green 8080:8080"
-    echo ""
-    echo "  2. Run smoke tests against green pods"
-    echo ""
-    echo "  3. Promote traffic to green:"
-    echo "     $0 promote $NAMESPACE"
-    echo ""
-    echo "  4. If issues occur, rollback to blue:"
-    echo "     $0 rollback $NAMESPACE"
-}
-
 promote_to_green() {
     check_namespace
     
     # Check if green deployment exists
     if ! kubectl -n $NAMESPACE get deploy myapp-green &> /dev/null; then
-        echo -e "${RED}❌ Green deployment not found. Deploy green first:${NC}"
-        echo "   $0 deploy-green $NAMESPACE <image-tag> [image-repo]"
+        echo -e "${RED}❌ Green deployment not found.${NC}"
+        echo "Deploy green via CI/CD pipeline first."
         exit 1
     fi
     
@@ -205,6 +120,7 @@ promote_to_green() {
     fi
     
     echo -e "${GREEN}🔀 Promoting: Switching traffic from ${BLUE}BLUE${GREEN} → ${GREEN}GREEN${NC}"
+    echo "Namespace: $NAMESPACE"
     echo ""
     
     read -p "Continue with promotion? (yes/no): " confirm
@@ -232,7 +148,7 @@ promote_to_green() {
     echo "  - Verify application behavior"
     echo ""
     echo -e "${YELLOW}If issues arise, rollback immediately:${NC}"
-    echo "  $0 rollback $NAMESPACE"
+    echo "  $0 rollback"
 }
 
 rollback_to_blue() {
@@ -252,6 +168,7 @@ rollback_to_blue() {
     fi
     
     echo -e "${RED}🔙 Rolling back: Switching traffic from ${GREEN}GREEN${RED} → ${BLUE}BLUE${NC}"
+    echo "Namespace: $NAMESPACE"
     echo ""
     
     read -p "Continue with rollback? (yes/no): " confirm
@@ -277,34 +194,13 @@ rollback_to_blue() {
 
 # Main command dispatcher
 case $COMMAND in
-    setup)
-        if [ -z "$NAMESPACE" ] || [ -z "$IMAGE_TAG" ]; then
-            usage
-        fi
-        setup_baseline
-        ;;
-    deploy-green)
-        if [ -z "$NAMESPACE" ] || [ -z "$IMAGE_TAG" ]; then
-            usage
-        fi
-        deploy_green
-        ;;
     promote)
-        if [ -z "$NAMESPACE" ]; then
-            usage
-        fi
         promote_to_green
         ;;
     rollback)
-        if [ -z "$NAMESPACE" ]; then
-            usage
-        fi
         rollback_to_blue
         ;;
     status)
-        if [ -z "$NAMESPACE" ]; then
-            usage
-        fi
         show_status
         ;;
     *)
