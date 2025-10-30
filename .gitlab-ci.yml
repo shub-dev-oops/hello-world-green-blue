@@ -12,14 +12,26 @@ variables:
 .default_kube: &kube
   image: alpine/helm:3.15.4
   before_script:
-    - apk add --no-cache bash curl jq kubectl
     # If using raw kubeconfig, store in GitLab variable KUBECONFIG_CONTENT:
     # - mkdir -p ~/.kube && echo "$KUBECONFIG_CONTENT" > ~/.kube/config
+    # Option A: Service Account Token (recommended for EKS)
+    - apk add --no-cache bash curl jq kubectl
+    - kubectl config set-cluster eks --server="$KUBE_API_URL" --insecure-skip-tls-verify=false --certificate-authority=<(echo "$KUBE_CA_CERT")
+    - kubectl config set-credentials gitlab --token="$KUBE_TOKEN"
+    - kubectl config set-context eks --cluster=eks --user=gitlab
+    - kubectl config use-context eks
+
+    # Option B: Full kubeconfig
+    - apk add --no-cache bash curl jq kubectl
+    - mkdir -p ~/.kube
+    - echo "$KUBECONFIG_CONTENT" | base64 -d > ~/.kube/config
 
 build:
   stage: build
   image: docker:27.3.1
   services: [docker:27.3.1-dind]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
     - docker build -t $IMAGE_REPO:$CI_COMMIT_SHA .
     - docker push $IMAGE_REPO:$CI_COMMIT_SHA
@@ -54,6 +66,7 @@ promote:
   script:
     - helm upgrade --install $HELM_RELEASE_ROUTER $CHART_PATH -n $KUBE_NAMESPACE \
         --set deployment.enabled=false \
+        --set service.enabled=true \
         --set routeTo=green
   when: manual
   environment:
@@ -66,6 +79,7 @@ rollback:
   script:
     - helm upgrade --install $HELM_RELEASE_ROUTER $CHART_PATH -n $KUBE_NAMESPACE \
         --set deployment.enabled=false \
+        --set service.enabled=true \
         --set routeTo=blue
   when: manual
   environment:

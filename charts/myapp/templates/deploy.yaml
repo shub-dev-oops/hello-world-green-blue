@@ -22,6 +22,14 @@ spec:
       - name: app
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: Always
+        {{- if .Values.container.command }}
+        command:
+          {{- toYaml .Values.container.command | nindent 10 }}
+        {{- end }}
+        {{- if .Values.container.args }}
+        args:
+          {{- toYaml .Values.container.args | nindent 10 }}
+        {{- end }}
         ports:
         - containerPort: {{ .Values.ports.container }}
         readinessProbe:
@@ -49,6 +57,42 @@ spec:
 {{- else }}
           {}
 {{- end }}
+        
+      {{- if .Values.nodeAffinity.enabled }}
+      affinity:
+        nodeAffinity:
+          {{- if .Values.nodeAffinity.required.values }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: {{ .Values.nodeAffinity.required.key | quote }}
+                operator: In
+                values:
+{{ toYaml .Values.nodeAffinity.required.values | indent 16 }}
+          {{- end }}
+          {{- if .Values.nodeAffinity.preferred }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+{{- range .Values.nodeAffinity.preferred }}
+          - weight: {{ .weight }}
+            preference:
+              matchExpressions:
+              - key: {{ .key | quote }}
+                operator: In
+                values:
+{{ toYaml .values | indent 16 }}
+{{- end }}
+          {{- end }}
+      {{- end }}
+
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end }}
+
+      {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+      {{- end }}
 {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
 {{ toYaml . | indent 8 }}

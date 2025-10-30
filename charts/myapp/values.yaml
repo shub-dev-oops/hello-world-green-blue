@@ -8,10 +8,13 @@ image:
   repository: registry.gitlab.com/ORG/PROJ/myapp
   tag: "latest"
 
+
 container:
   port: 8080
-  command: ["python"]
-  args: ["app.py"]  # or the correct script entry, e.g., "main.py"
+  # Remove command/args to use Dockerfile CMD
+  # OR explicitly set:
+  # command: ["gunicorn"]
+  # args: ["-k", "gevent", "-b", "0.0.0.0:8080", "app.main:create_app()"]
 
 ports:
   service: 80
@@ -23,11 +26,45 @@ imagePullSecrets: []
 deployment:
   enabled: true
 
+# Node placement helpers
+# Use these to schedule pod onto nodes that are in availability zones
+# which have public subnets (so the NLB can reach them) or onto nodes
+# that you explicitly label as "public". Typical EKS node labels are
+# `topology.kubernetes.io/zone` (recommended) or the older
+# `failure-domain.beta.kubernetes.io/zone`.
+nodeAffinity:
+  # Set to true to enable the affinity block in the pod spec
+  enabled: false
+  # Required scheduling: provide the selector key and a list of acceptable values
+  # Example:
+  # required:
+  #   key: topology.kubernetes.io/zone
+  #   values: ["us-west-2a"]
+  required:
+    key: topology.kubernetes.io/zone
+    values: []
+  # Preferred scheduling (list of {weight,key,values})
+  # Example:
+  # preferred:
+  #   - weight: 100
+  #     key: topology.kubernetes.io/zone
+  #     values: ["us-west-2a"]
+  preferred: []
+
+# Optional nodeSelector to target nodes by arbitrary labels (map)
+nodeSelector: {}
+
+# Optional tolerations list to allow scheduling onto tainted nodes
+tolerations: []
+
 # Router decides where the Service points: blue|green
+# Set this when deploying the router release (with deployment.enabled=false)
 routeTo: blue
 
 service:
-  enabled: true
+  # For blue/green deployments, disable service in color releases
+  # Only enable in the router release
+  enabled: false
   type: LoadBalancer
   annotations:
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
